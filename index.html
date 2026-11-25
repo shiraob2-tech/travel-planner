@@ -31,17 +31,28 @@ function deleteButton(key,item){return `<button class="secondary" data-del="${ke
    const data = await response.json();
    if (title.value.trim() !== query) return;
 
-   const addresses = new Set();
+   const labels = new Set();
    for (const {properties: p} of data.features) {
+    const isJapan = p.countrycode?.toUpperCase() === 'JP';
     const street = [p.street, p.housenumber].filter(Boolean).join(' ');
-    const parts = p.countrycode?.toUpperCase() === 'JP'
-     ? [p.state, p.county, p.city, p.district, p.locality, street]
+    const parts = isJapan
+     ? [p.state, p.county, p.city, p.district, p.locality, p.street, p.housenumber]
      : [street, p.locality, p.district, p.city, p.state, p.postcode, p.country];
     const address = [...new Set(parts.filter(Boolean))].join(' ');
-    if (!address || ![street, p.locality, p.district, p.city].some(Boolean)) continue;
     const label = [p.name, address].filter(Boolean).join(' — ');
-    if (addresses.has(label)) continue;
-    addresses.add(label);
+    if (!label || labels.has(label)) continue;
+    labels.add(label);
+
+    if (!p.housenumber || !(p.city || p.district || p.locality)) {
+     const link = document.createElement('a');
+     link.className = 'btn secondary';
+     link.href = mapsPlaceUrl([p.name || query, p.city, p.state].filter(Boolean).join(' '));
+     link.target = '_blank';
+     link.rel = 'noopener noreferrer';
+     link.textContent = label + '（番地未確認・地図で確認）';
+     results.append(link);
+     continue;
+    }
 
     const candidate = document.createElement('button');
     candidate.type = 'button';
@@ -50,16 +61,16 @@ function deleteButton(key,item){return `<button class="secondary" data-del="${ke
     candidate.onclick = () => {
      place.value = address;
      results.replaceChildren();
-     status.textContent = '住所を入力しました。必要に応じて修正できます。';
+     status.textContent = '候補の住所を入力しました。番地を確認し、必要に応じて修正してください。';
      place.focus();
     };
     results.append(candidate);
    }
 
-   status.textContent = addresses.size
-    ? '目的地に合う候補を選んでください。'
+   status.textContent = labels.size
+    ? '住所候補を選べます。番地未確認の候補は地図で住所を確認し、直接入力してください。'
     : '住所が見つかりませんでした。施設名に市町村名を加えて検索するか、住所を直接入力してください。';
-   if (addresses.size) {
+   if (labels.size) {
     const attribution = document.createElement('a');
     attribution.href = 'https://www.openstreetmap.org/copyright';
     attribution.target = '_blank';
