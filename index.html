@@ -178,7 +178,7 @@ function renderDiary(c){
   <option value="">予定・観光地を選択</option>
   ${schedule.map((item,index)=>`<option value="${index}">${esc([item.date,item.time,item.title].filter(Boolean).join(' '))}</option>`).join('')}
  </select></label>`:'';
- c.innerHTML=`<div class="card"><h2>写真・旅行記録</h2><form id="f">${field('date','日付','date',true)}${titlePicker}${field('title','タイトル','text',true)}${area('note','感想・旅行記')}<label>写真（容量を節約するため縮小して保存）<input name="photo" type="file" accept="image/*"></label><button>記録を保存</button></form></div><div class="card"><h2>旅行の思い出</h2>${trip().diary.map(x=>`<div class="item"><b>${esc(x.date)}　${esc(x.title)}</b><p>${esc(x.note)}</p>${x.photo?`<img class="photo" src="${x.photo}" alt="旅行の写真">`:''}<div>${deleteButton('diary',x)}</div></div>`).join('')||'<div class="empty">旅行記録はまだありません</div>'}</div>`;const form=$('#f');
+ c.innerHTML=`<div class="card"><h2>写真・旅行記録</h2><form id="f">${field('date','日付','date',true)}${titlePicker}${field('title','タイトル','text',true)}${area('note','感想・旅行記')}<label>写真（容量を節約するため縮小して保存）<input name="photo" type="file" accept="image/*"></label><button>記録を保存</button></form></div><div class="card"><h2>旅行の思い出</h2>${trip().diary.map(x=>`<div class="item"><b>${esc(x.date)}　${esc(x.title)}</b><p data-diary-note style="white-space:pre-wrap">${esc(x.note)}</p>${x.photo?`<img class="photo" src="${x.photo}" alt="旅行の写真">`:''}<div><button type="button" class="secondary" data-edit-diary="${esc(x.id)}">感想・旅行記を編集</button>${deleteButton('diary',x)}</div></div>`).join('')||'<div class="empty">旅行記録はまだありません</div>'}</div>`;const form=$('#f');
  const picker=form.querySelector('#diary-title-picker');
  if(picker)picker.onchange=()=>{
   if(picker.value==='')return;
@@ -188,7 +188,54 @@ function renderDiary(c){
   if(!date.value)date.value=item.date;
   picker.value='';
  };
- form.onsubmit=async e=>{e.preventDefault();let data=formData(e.target),file=e.target.elements.photo.files[0];delete data.photo;if(file){if(!file.type.startsWith('image/'))return alert('画像ファイルを選択してください');try{data.photo=await resizeImage(file)}catch{return alert('写真を読み込めませんでした')}}newItem('diary',data)};bindDelete()}
+ form.onsubmit=async e=>{e.preventDefault();let data=formData(e.target),file=e.target.elements.photo.files[0];delete data.photo;if(file){if(!file.type.startsWith('image/'))return alert('画像ファイルを選択してください');try{data.photo=await resizeImage(file)}catch{return alert('写真を読み込めませんでした')}}newItem('diary',data)};
+ c.querySelectorAll('[data-edit-diary]').forEach(button=>{
+  button.onclick=()=>editDiaryNote(currentTrip.id,button);
+ });
+ bindDelete();
+}
+
+function editDiaryNote(tripId,button){
+ const findRecord=()=>state.trips.find(t=>t.id===tripId)?.diary.find(x=>x.id===button.dataset.editDiary);
+ const record=findRecord();
+ if(!record)return;
+ const original=record.note;
+ const dialog=document.createElement('dialog');
+ dialog.style.width='min(90vw, 520px)';
+ dialog.style.maxHeight='85dvh';
+ dialog.innerHTML=`<h2>感想・旅行記を編集</h2><form>
+ ${area('note','感想・旅行記')}
+ <p role="status"></p>
+ <button type="submit">変更を保存</button>
+ <button type="button" class="secondary">キャンセル</button>
+ </form>`;
+ const form=dialog.querySelector('form');
+ const input=form.elements.namedItem('note');
+ const status=form.querySelector('[role="status"]');
+ input.value=original??'';
+ dialog.querySelector('button[type="button"]').onclick=()=>dialog.close();
+ dialog.addEventListener('close',()=>dialog.remove(),{once:true});
+ form.onsubmit=event=>{
+  event.preventDefault();
+  const current=findRecord();
+  if(!current||current.note!==original){
+   status.textContent='記録が更新されています。記録タブを開き直してから編集してください。';
+   return;
+  }
+  current.note=input.value;
+  if(!save()){
+   if(original===undefined)delete current.note;
+   else current.note=original;
+   status.textContent='変更を保存できませんでした。';
+   return;
+  }
+  button.closest('.item').querySelector('[data-diary-note]').textContent=current.note;
+  dialog.close();
+ };
+ document.body.append(dialog);
+ dialog.showModal();
+}
+
 function resizeImage(file){return new Promise((resolve,reject)=>{let url=URL.createObjectURL(file),img=new Image();img.onload=()=>{let scale=Math.min(1,900/Math.max(img.width,img.height));let cv=document.createElement('canvas');cv.width=Math.max(1,Math.round(img.width*scale));cv.height=Math.max(1,Math.round(img.height*scale));cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);URL.revokeObjectURL(url);resolve(cv.toDataURL('image/jpeg',.65))};img.onerror=()=>{URL.revokeObjectURL(url);reject()};img.src=url})}
 function renderPacking(c){let p=trip().packing;c.innerHTML=`<div class="card"><h2>持ち物チェック</h2><p class="muted">${p.filter(x=>x.done).length} / ${p.length} 個 準備完了</p><form id="f">${field('name','持ち物','text',true)}<button>追加</button></form></div><div class="card">${p.map(x=>`<div class="item row"><label style="flex:1;margin:0"><input type="checkbox" data-check="${x.id}" ${x.done?'checked':''}><span style="${x.done?'text-decoration:line-through;color:#888':''}">${esc(x.name)}</span></label>${deleteButton('packing',x)}</div>`).join('')||'<div class="empty">持ち物はまだありません</div>'}</div>`;$('#f').onsubmit=e=>{e.preventDefault();newItem('packing',{...formData(e.target),done:false})};document.querySelectorAll('[data-check]').forEach(x=>x.onchange=e=>{let item=p.find(y=>y.id===x.dataset.check);item.done=e.target.checked;save();render()});bindDelete()}
 
